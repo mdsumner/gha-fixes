@@ -227,6 +227,39 @@ else
               fi
             fi
             
+            # 10. Expensive runners (macos = 10x, windows = 2x multiplier)
+            has_macos=$(echo "$content" | grep -ciE "macos-|macos-latest|macos-14|macos-13" || echo "0")
+            has_windows=$(echo "$content" | grep -ciE "windows-|windows-latest|windows-2022" || echo "0")
+            has_macos=$((has_macos + 0))
+            has_windows=$((has_windows + 0))
+            
+            if [ "$has_macos" -gt 0 ] || [ "$has_windows" -gt 0 ]; then
+              # Check if it runs on every push/PR (not just main/scheduled)
+              runs_on_all=false
+              if echo "$content" | grep -qE "push:" && ! echo "$content" | grep -A3 "push:" | grep -qE "branches:.*main|branches:.*master"; then
+                runs_on_all=true
+              fi
+              if echo "$content" | grep -qE "pull_request:" && ! echo "$content" | grep -qE "if:.*github.ref.*main|if:.*schedule"; then
+                runs_on_all=true
+              fi
+              
+              if [ "$runs_on_all" = true ]; then
+                if [ "$has_macos" -gt 0 ]; then
+                  issues="${issues}  ⚠ MACOS_10X: Uses macos runner (10x minutes) on all pushes/PRs\n"
+                fi
+                if [ "$has_windows" -gt 0 ]; then
+                  issues="${issues}  ⚠ WINDOWS_2X: Uses windows runner (2x minutes) on all pushes/PRs\n"
+                fi
+              else
+                if [ "$has_macos" -gt 0 ]; then
+                  issues="${issues}  ○ MACOS_10X: Uses macos runner (10x minutes) - appears limited to main/scheduled\n"
+                fi
+                if [ "$has_windows" -gt 0 ]; then
+                  issues="${issues}  ○ WINDOWS_2X: Uses windows runner (2x minutes) - appears limited to main/scheduled\n"
+                fi
+              fi
+            fi
+            
             # 10. workflow_dispatch without inputs (okay but notable)
             # Skip - this is often intentional
             
@@ -293,6 +326,12 @@ if [ -s /tmp/gha_antipatterns.txt ]; then
   grep -c "FREQUENT_SCHEDULE" /tmp/gha_antipatterns.txt 2>/dev/null | xargs -I{} echo "  ⚠ FREQUENT_SCHEDULE: {} workflows"
   grep -c "ARTIFACT_NO_RETENTION" /tmp/gha_antipatterns.txt 2>/dev/null | xargs -I{} echo "  ○ ARTIFACT_NO_RETENTION: {} workflows"
   grep -c "NO_CACHE" /tmp/gha_antipatterns.txt 2>/dev/null | xargs -I{} echo "  ○ NO_CACHE: {} workflows"
+  echo ""
+  echo "Expensive runners (high priority!):"
+  grep -c "MACOS_10X.*on all" /tmp/gha_antipatterns.txt 2>/dev/null | xargs -I{} echo "  ⚠ MACOS on all pushes/PRs: {} workflows (10x multiplier!)"
+  grep -c "WINDOWS_2X.*on all" /tmp/gha_antipatterns.txt 2>/dev/null | xargs -I{} echo "  ⚠ WINDOWS on all pushes/PRs: {} workflows (2x multiplier)"
+  grep -c "MACOS_10X.*limited" /tmp/gha_antipatterns.txt 2>/dev/null | xargs -I{} echo "  ○ MACOS limited to main/scheduled: {} workflows"
+  grep -c "WINDOWS_2X.*limited" /tmp/gha_antipatterns.txt 2>/dev/null | xargs -I{} echo "  ○ WINDOWS limited to main/scheduled: {} workflows"
   echo ""
   echo "Detailed findings in: /tmp/gha_antipatterns.txt"
 else
